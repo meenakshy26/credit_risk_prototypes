@@ -1,0 +1,13 @@
+{
+  "name": "pan-entity-detection",
+  "version": "0.1.0",
+  "description": "Detect entity type (Individual/Company/HUF/...) from a PAN's 4th character",
+  "private": true,
+  "scripts": {
+    "test": "node --test",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.0"
+  }
+}

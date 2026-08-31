@@ -1,0 +1,13 @@
+node_modules/
+
+# Runtime data: local SQLite store and any downloaded/raw WPI files.
+# This repo is code-only — data is pulled fresh via `npm run download`.
+data/
+out/
+
+# Real, proprietary, or deterministic data files — never committed (see PRD/README).
+Macro Assessment - CAM.xlsx
+WPI x Events - Master.xlsx
+wpi_monthly_index_*.xlsx
+*.db
+.claude/

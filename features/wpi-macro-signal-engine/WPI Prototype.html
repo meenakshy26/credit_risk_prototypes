@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WPI Macro Signal — Prototype</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";</script>
+<style>
+  :root { --navy:#1F3864; --grey:#f2f2f2; --border:#c9c9c9; --orange:#b45309; --red:#c62828; --green:#2e7d32; --yell:#FFF2CC; --blue:#DDEBF7; }
+  * { box-sizing:border-box; }
+  body { font-family:Arial,Helvetica,sans-serif; margin:0; background:#fafafa; color:#1a1a1a; font-size:14px; }
+  header { background:var(--navy); color:#fff; padding:14px 22px; }
+  header h1 { margin:0; font-size:18px; }
+  header p { margin:4px 0 0; font-size:12px; opacity:.85; }
+  main { max-width:1080px; margin:0 auto; padding:16px 22px 60px; }
+  .step { background:#fff; border:1px solid var(--border); border-radius:8px; padding:14px 16px; margin:12px 0; }
+  .step h2 { margin:0 0 8px; font-size:14px; color:var(--navy); }
+  .muted { color:#666; font-size:12px; }
+  a { color:var(--navy); }
+  button { font-family:inherit; font-size:13px; padding:6px 12px; border:1px solid var(--navy); background:#fff; color:var(--navy); border-radius:6px; cursor:pointer; }
+  button.primary { background:var(--navy); color:#fff; }
+  button:disabled { opacity:.4; cursor:default; }
+  select,input[type=text] { font-family:inherit; font-size:13px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; }
+  table { border-collapse:collapse; width:100%; margin-top:10px; background:#fff; }
+  th { background:var(--navy); color:#fff; font-size:12px; padding:6px 8px; text-align:left; }
+  td { border:1px solid #ddd; padding:6px 8px; font-size:12.5px; vertical-align:top; }
+  tr.family td { background:var(--grey); font-weight:bold; }
+  .flag { font-weight:bold; padding:2px 8px; border-radius:10px; font-size:11px; display:inline-block; }
+  .flag.RED { background:#fde0e0; color:var(--red); }
+  .flag.ORANGE { background:#fdebd7; color:var(--orange); }
+  .flag.ok { background:#e6f2e6; color:var(--green); }
+  .verdict { border-radius:8px; padding:12px 16px; margin:12px 0; font-size:14px; border:1px solid var(--border); }
+  .verdict.bad { background:#fde0e0; border-color:var(--red); }
+  .verdict.warn { background:#fdebd7; border-color:var(--orange); }
+  .verdict.good { background:#e6f2e6; border-color:var(--green); }
+  .verdict.info { background:var(--blue); }
+  .newsbox { background:var(--yell); border:1px solid #e0cf8a; border-radius:8px; padding:10px 14px; margin:10px 0; }
+  .newsbox li { margin:4px 0; font-size:13px; }
+  .tabs { display:flex; gap:6px; margin:16px 0 0; }
+  .tabs button { border-radius:8px 8px 0 0; border-bottom:none; }
+  .tabs button.active { background:var(--navy); color:#fff; }
+  .drop { border:2px dashed var(--navy); border-radius:8px; padding:22px; text-align:center; background:var(--blue); cursor:pointer; }
+  .drop.loaded { border-style:solid; background:#e6f2e6; }
+  .pill { font-size:11px; background:var(--grey); border-radius:10px; padding:2px 8px; margin-left:6px; }
+  .side-BUY { color:var(--red); font-weight:bold; }
+  .side-SELL { color:var(--green); font-weight:bold; }
+  .side-STOCK { color:var(--navy); font-weight:bold; }
+  .side-COST { color:var(--orange); font-weight:bold; }
+  .side-WATCH { color:#666; font-weight:bold; }
+  .matchrow { padding:6px 8px; border-bottom:1px solid #eee; cursor:pointer; }
+  .matchrow:hover { background:var(--blue); }
+  #searchResults, #mapResults { background:#fff; border:1px solid var(--border); border-radius:6px; max-height:300px; overflow:auto; margin-top:8px; }
+  .hidden { display:none; }
+  .small { font-size:11px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>WPI Macro Signal — Prototype</h1>
+  <p>Does the price of what a borrower BUYS and SELLS warn you before their financials do? Drop in the monthly WPI file and see.</p>
+</header>
+<main>
+
+<div class="step">
+  <h2>Step 1 — Load the monthly WPI file</h2>
+  <p class="muted">Download the latest "Index Numbers of Wholesale Price in India (Base 2022-23) — item-wise monthly" Excel from
+  <a href="https://eaindustry.nic.in/download_data_2223.asp" target="_blank">eaindustry.nic.in</a> (new file on the 14th of every month), then drop it below.</p>
+  <div class="drop" id="drop" onclick="document.getElementById('file').click()">
+    <b id="dropText">Click here or drag the WPI .xlsx file into this box</b>
+    <div class="muted" id="dropSub">Nothing leaves your computer — the file is read locally in your browser.</div>
+  </div>
+  <input type="file" id="file" accept=".xlsx,.xls" class="hidden">
+</div>
+
+<div id="afterLoad" class="hidden">
+  <div class="tabs">
+    <button id="tab-run" class="active" onclick="showTab('run')">Run borrower check</button>
+    <button id="tab-intake" onclick="showTab('intake')">From financials</button>
+    <button id="tab-build" onclick="showTab('build')">Add / edit borrower</button>
+    <button id="tab-search" onclick="showTab('search')">Search any WPI item</button>
+    <button id="tab-movers" onclick="showTab('movers')">Biggest movers</button>
+  </div>
+
+  <!-- RUN TAB -->
+  <div id="pane-run" class="step" style="border-radius:0 8px 8px 8px">
+    <h2>Step 2 — Pick a borrower profile</h2>
+    <select id="profileSel" onchange="renderRun()"></select>
+    <span class="pill" id="monthPill"></span>
+    <div id="runOut"></div>
+  </div>
+
+  <!-- INTAKE TAB -->
+  <div id="pane-intake" class="step hidden" style="border-radius:0 8px 8px 8px">
+    <h2>From a financial statement — paste the schedule, get signals</h2>
+    <p class="muted">Open the raw-material / inventory schedule in the financials and paste the lines below — amounts and all, numbers are ignored. If it is a scanned PDF that will not copy, type just the item names, one per line. Trade names work (laha, khal, bardana, sariya…).</p>
+    <input type="text" id="inName" placeholder="Borrower name" style="width:240px">
+    <div style="margin:10px 0;padding:10px;background:var(--blue);border-radius:8px">
+      <b>Or upload the financial statement (PDF):</b>
+      <input type="file" accept=".pdf" onchange="if(this.files[0])handlePDF(this.files[0])">
+      <div class="muted">The tool reads the text, finds lines that look like commodities, and maps them for your review. Works best on digitally-made PDFs; on scans it can only read whatever text the scan carries — always verify the matches. Amounts and quantities are NOT read; only item names.</div>
+      <div id="pdfStatus" class="muted"></div>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
+      <div style="flex:1;min-width:260px"><b>Raw materials / consumables / packing <span class="side-BUY">(what they BUY)</span></b><br>
+        <textarea id="inRM" rows="8" style="width:100%;font-family:inherit;font-size:13px;border:1px solid var(--border);border-radius:6px;padding:6px" placeholder="Laha 4,62,33,876&#10;Empty Tin 1,56,000&#10;Bardana 6,44,000"></textarea></div>
+      <div style="flex:1;min-width:260px"><b>Finished goods <span class="side-SELL">(what they SELL)</span></b><br>
+        <textarea id="inFG" rows="8" style="width:100%;font-family:inherit;font-size:13px;border:1px solid var(--border);border-radius:6px;padding:6px" placeholder="Mustard Oil 77,17,000&#10;Khal 13,07,000"></textarea></div>
+    </div>
+    <label class="muted"><input type="checkbox" id="inFuel" checked> also add the Fuel &amp; Power row (freight + electricity — touches every borrower)</label><br>
+    <button class="primary" style="margin-top:8px" onclick="mapIntake()">Map to WPI items</button>
+    <div id="intakeOut"></div>
+  </div>
+
+  <!-- BUILD TAB -->
+  <div id="pane-build" class="step hidden" style="border-radius:0 8px 8px 8px">
+    <h2>Build a borrower profile from a financial statement</h2>
+    <p class="muted">Type each raw material / finished good exactly as it appears in the schedule (e.g. "Laha", "Empty Tin"). Pick the matching WPI item; if there is no exact item, pick the nearest parent group and mark it PROXY.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input type="text" id="npName" placeholder="Borrower name" style="width:200px">
+      <button class="primary" onclick="createProfile()">Create new profile</button>
+      <span class="muted">or edit:</span>
+      <select id="editSel" onchange="renderBuild()"></select>
+      <button onclick="deleteProfile()">Delete profile</button>
+    </div>
+    <div id="buildArea"></div>
+    <hr style="border:none;border-top:1px solid #ddd;margin:16px 0">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="exportProfiles()">Download all profiles (JSON backup)</button>
+      <button onclick="document.getElementById('impFile').click()">Load profiles from JSON</button>
+      <input type="file" id="impFile" accept=".json" class="hidden">
+    </div>
+    <p class="muted">Profiles also auto-save in this browser where supported. The JSON backup is the safe copy — keep it with the WPI files.</p>
+  </div>
+
+  <!-- SEARCH TAB -->
+  <div id="pane-search" class="step hidden" style="border-radius:0 8px 8px 8px">
+    <h2>Look up any commodity</h2>
+    <input type="text" id="searchBox" placeholder="Try: mustard, tin, cement, yarn, HR coils…" style="width:340px" oninput="renderSearch()">
+    <div id="searchResults"></div>
+  </div>
+
+  <!-- MOVERS TAB -->
+  <div id="pane-movers" class="step hidden" style="border-radius:0 8px 8px 8px">
+    <h2>Biggest 3-month moves across all ~800 items</h2>
+    <p class="muted">A quick reality scan: which prices moved most in the last quarter. Any borrower touching these deserves a look.</p>
+    <div id="moversOut"></div>
+  </div>
+</div>
+
+<div class="step">
+  <h2>How to read the flags</h2>
+  <p><b>The golden rule:</b> if the thing a borrower <span class="side-BUY">BUYS</span> is going up faster than the thing they <span class="side-SELL">SELL</span>, the borrower is earning less.</p>
+  <p>Each price is compared with 3 months ago: moved more than 10% either way → <span class="flag ORANGE">ORANGE</span> — look into it; more than 20% → <span class="flag RED">RED</span> — act.</p>
+  <p class="muted">This tool reads market prices only. It does not know the borrower's stock quantity, purchase price or leverage, it does not watch the news (it tells you which news to check), and it is not a credit decision — it is an early-warning instrument for you to test.</p>
+</div>
+
+</main>
+<script>
+// ============================= DATA =============================
+const SYN = {
+  "laha":"rapeseed mustard seed","sarso":"rapeseed mustard seed","sarson":"rapeseed mustard seed",
+  "khal":"mustard oil cake","khali":"mustard oil cake","oilcake":"oil cake",
+  "bardana":"hessian gunny sacking","gunny":"hessian gunny sacking",
+  "tin":"metal containers tanks reservoirs","empty tin":"metal containers tanks reservoirs",
+  "jar":"plastic box containers","dabba":"plastic box containers",
+  "box":"paper products cardboard corrugated boxes","carton":"paper products cardboard corrugated boxes",
+  "atta":"wheat flour","maida":"wheat flour","besan":"gram flour",
+  "sariya":"bars rods mild steel","rebar":"bars rods mild steel","tmt":"bars rods mild steel",
+  "channa":"gram","chana":"gram","dhaan":"paddy","dhan":"paddy",
+  "kapas":"raw cotton","rui":"cotton","suta":"cotton yarn","dhaga":"cotton yarn",
+  "gud":"jaggery","gur":"jaggery","cheeni":"sugar","shakkar":"sugar",
+  "sarson tel":"mustard oil","tel":"oil","ghee":"vanaspati ghee",
+  "loha":"iron steel","patra":"sheets steel","angle":"structural angles",
+  "diesel":"high speed diesel","petrol":"petrol","coyla":"coal","koyla":"coal"
+};
+const DEFAULT_PROFILES = [
+ { name:"Iron & Steel Trader (example)",
+   items:[
+    {label:"HR Coils (stock)", side:"STOCK", codes:["1314010010"], driver:"1103010005", note:"Most policy-driven price on the sheet — check the safeguard-duty news below."},
+    {label:"HR Plates (stock)", side:"STOCK", codes:["1314010011"], driver:"1103010005", note:""},
+    {label:"CR Coils (stock)", side:"STOCK", codes:["1314010012"], driver:"1103010005", note:""},
+    {label:"Zinc-coated Steel (stock)", side:"STOCK", codes:["1315060001"], driver:"1103010005", note:"Also watch zinc."},
+    {label:"Bars & Rods / TMT (stock)", side:"STOCK", codes:["1314010014"], note:"Flat while other steel rises = builders are not buying — demand warning."},
+    {label:"Steel Scrap (stock)", side:"STOCK", codes:["1314010027"], note:""},
+    {label:"Iron Ore", side:"WATCH", codes:["1103010005"], note:"Mills' main cost — moves 1–2 months BEFORE steel. This is the preview."},
+    {label:"Coking Coal", side:"WATCH", codes:["1201010100"], note:"The other mill cost — same preview logic."},
+    {label:"HR Structurals", side:"WATCH", codes:["1314010019"], note:"Construction-demand thermometer."},
+    {label:"Fuel & Power (freight)", side:"COST", codes:["1200000000"], note:"The trader's freight bill."}
+   ],
+   news:[
+    {t:"Steel safeguard duty — the single biggest trader risk: if the duty holding prices up lapses, prices fall and the trader eats the loss on stock.", u:"https://www.dgtr.gov.in"},
+    {t:"Government notifications on steel (search 'steel'):", u:"https://pib.gov.in/AllReleases.aspx"},
+    {t:"If any stock is imported: is the rupee >5% weaker than 3 months ago? If yes, upgrade flags one level.", u:"https://www.rbi.org.in/Scripts/BS_DisplayReferenceRate.aspx"},
+    {t:"Global ore/steel prices (lead India by 2–8 weeks) — World Bank Pink Sheet:", u:"https://www.worldbank.org/en/research/commodity-markets"}
+   ]},
+ { name:"N.K. Product — mustard oil mill (example)",
+   items:[
+    {label:"Mustard Seed ('Laha')", side:"BUY", codes:["1102020002"], note:"97% of raw material — this row IS the cost side."},
+    {label:"Mustard Oil", side:"SELL", codes:["1301040002","1301040012"], note:"Main product."},
+    {label:"Mustard Oil Cake ('Khal')", side:"SELL", codes:["1301140005"], note:"Second income — cushions a crushing squeeze."},
+    {label:"Palm Oil (imported competitor)", side:"WATCH", codes:["1301040007"], note:"Not a cost — a CEILING. Cheap palm caps mustard-oil prices."},
+    {label:"Bardana / Sacking", side:"COST", codes:["1304010008"], note:""},
+    {label:"Empty Tin", side:"COST", codes:["1315020000"], proxy:true, driver:"1314010012", note:"PROXY: metal-containers group; tins are made of flat steel (CR Coils = driver)."},
+    {label:"Jar", side:"COST", codes:["1312030020"], proxy:true, note:"PROXY: plastic box/containers."},
+    {label:"Bottles", side:"COST", codes:["1312030025"], note:""},
+    {label:"Box", side:"COST", codes:["1308020002"], note:""},
+    {label:"Fuel & Power (electricity + freight + tanker)", side:"COST", codes:["1200000000"], note:""}
+   ],
+   news:[
+    {t:"Edible-oil import duty — the MASTER OVERRIDE for every oil mill: a duty cut lets cheap palm in and pushes mustard-oil prices down from the notification date.", u:"https://taxinformation.cbic.gov.in"},
+    {t:"MSP for mustard, NAFED procurement, stocking limits (search 'mustard'):", u:"https://pib.gov.in/AllReleases.aspx"},
+    {t:"Indonesia/Malaysia palm-oil export restrictions — act the same day, prices react immediately.", u:"https://www.worldbank.org/en/research/commodity-markets"},
+    {t:"Mustard is a rabi crop — monsoon and sowing reports set next season's seed price.", u:"https://mausam.imd.gov.in"}
+   ]}
+ ,{ name:"Aditya Rice Enterprises — rice trader (example)",
+   items:[
+    {label:"Rice (traded stock)", side:"STOCK", codes:["1301060004"], driver:"1101010101", note:"Non-basmati rice — what they buy AND sell. Margin is only ~3%: small price moves matter."},
+    {label:"Broken Rice (traded stock)", side:"STOCK", codes:["1301060002"], note:"Export-policy-sensitive: broken-rice export bans hit this price the same day."},
+    {label:"Paddy", side:"WATCH", codes:["1101010101"], note:"The millers' input — MSP-administered, so it moves at MSP announcements and harvest, not gradually."},
+    {label:"Fuel & Power (freight + lorry diesel)", side:"COST", codes:["1200000000"], note:"Freight-heavy business: ~₹1.2cr freight+diesel against ₹1.73cr gross profit. This row can eat the margin."}
+   ],
+   news:[
+    {t:"Rice EXPORT policy — the master override for rice traders: export bans / duties / minimum export prices on non-basmati and broken rice move prices from the notification date.", u:"https://www.dgft.gov.in"},
+    {t:"Paddy MSP announcement (each June) and government procurement — sets the floor under rice prices:", u:"https://pib.gov.in/AllReleases.aspx"},
+    {t:"FCI open-market sales (OMSS) — when FCI releases stock, market rice prices fall; bad for anyone holding stock:", u:"https://pib.gov.in/AllReleases.aspx"},
+    {t:"Monsoon and kharif sowing progress — sets next season's paddy crop:", u:"https://mausam.imd.gov.in"}
+   ]}
+];
+// ============================= CORE =============================
+let ITEMS=[], BYCODE={}, MONTHS=[], LATEST=-1, PROFILES=[];
+function loadProfiles(){
+  PROFILES = JSON.parse(JSON.stringify(DEFAULT_PROFILES));
+  try {
+    const s = localStorage.getItem("wpiProtoProfiles");
+    if (s){
+      const saved = JSON.parse(s);
+      DEFAULT_PROFILES.forEach(d=>{ if (saved.every(p=>p.name!==d.name)) saved.push(JSON.parse(JSON.stringify(d))); });
+      PROFILES = saved;
+    }
+  } catch(e){}
+}
+function persist(){ try { localStorage.setItem("wpiProtoProfiles", JSON.stringify(PROFILES)); } catch(e){} }
+function parseWorkbook(data){
+  const wb = XLSX.read(data, {cellDates:true});
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1});
+  const hdr = rows[0];
+  MONTHS = [];
+  hdr.forEach((h,i)=>{ if (i>=4 && h instanceof Date) MONTHS.push({col:i, d:h}); });
+  if (MONTHS.length===0) throw new Error("No month columns found — is this the item-wise WPI file (Base 2022-23) from eaindustry.nic.in?");
+  ITEMS=[]; BYCODE={};
+  rows.slice(1).forEach(r=>{
+    if (r[2]===undefined || r[2]===null) return;
+    const it = {level:String(r[0]||""), name:String(r[1]||""), code:String(r[2]).trim(),
+                series:MONTHS.map(m=> typeof r[m.col]==="number" ? r[m.col] : null)};
+    ITEMS.push(it); BYCODE[it.code]=it;
+  });
+  const all = BYCODE["1000000000"];
+  LATEST = -1;
+  all.series.forEach((v,k)=>{ if (v!==null) LATEST=k; });
+  if (LATEST<3) throw new Error("Less than 4 months of data in the file.");
+}
+function mLabel(k){ const d=MONTHS[k].d; return d.toLocaleString("en",{month:"short"})+"-"+String(d.getFullYear()).slice(2); }
+function val(code,k){ const it=BYCODE[code]; return it? it.series[k] : null; }
+function move(code, back){
+  const now=val(code,LATEST), then=(LATEST-back>=0)? val(code,LATEST-back):null;
+  if (now===null||then===null||then===0) return null;
+  return now/then-1;
+}
+function moveMulti(codes, back){
+  const ms=codes.map(c=>move(c,back)).filter(x=>x!==null);
+  if (ms.length===0) return null;
+  return ms.reduce((a,b)=>a+b,0)/ms.length;
+}
+function flagOf(m){ if (m===null) return "n/a"; const a=Math.abs(m); return a>0.2?"RED":a>0.1?"ORANGE":"ok"; }
+function pct(m){ return m===null? "–" : (m>=0?"+":"")+(m*100).toFixed(1)+"%"; }
+function norm(s){ return s.toLowerCase().replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim(); }
+function fuzzyScored(q, limit){
+  q = norm(q);
+  if (SYN[q]) q = SYN[q];
+  else q = q.split(" ").map(t=> SYN[t]? t+" "+SYN[t] : t).join(" ");
+  const STOP={and:1,the:1,for:1,incl:1,excl:1,other:1,others:1,with:1,non:1,exp:1,charges:1,expenses:1,misc:1,fee:1,fees:1};
+  const toks = q.split(" ").filter(t=>t.length>2 && STOP[t]===undefined);
+  if (toks.length===0) return [];
+  const scored=[];
+  ITEMS.forEach(it=>{
+    const n = norm(it.name);
+    const words = n.split(" ");
+    let s=0;
+    toks.forEach(t=>{
+      if (words.indexOf(t)>=0) s += t.length>3?4:2;        // whole-word match
+      else if (n.includes(t)) s += t.length>3?2:1;          // substring
+      else if (t.length>4 && n.includes(t.slice(0,t.length-1))) s+=1;
+    });
+    if (n===q) s+=10;
+    if (it.level==="Item") s+=1;             // prefer exact items over groups
+    if (s>0) scored.push({it,s});
+  });
+  scored.sort((a,b)=>b.s-a.s);
+  return scored.slice(0, limit||8);
+}
+function fuzzy(q, limit){ return fuzzyScored(q, limit).map(x=>x.it); }
+function verdictFor(p){
+  const buys = p.items.filter(i=>i.side==="BUY").map(i=>moveMulti(i.codes,3)).filter(x=>x!==null);
+  const sells= p.items.filter(i=>i.side==="SELL").map(i=>moveMulti(i.codes,3)).filter(x=>x!==null);
+  const stock= p.items.filter(i=>i.side==="STOCK").map(i=>moveMulti(i.codes,3)).filter(x=>x!==null);
+  const avg = a => a.reduce((x,y)=>x+y,0)/a.length;
+  const out=[];
+  if (buys.length && sells.length){
+    const b=avg(buys), s=avg(sells), gap=s-b;
+    let cls = gap < -0.03 ? "bad" : gap < 0 ? "warn" : "good";
+    let msg = "<b>Golden rule:</b> what they BUY moved "+pct(b)+", what they SELL moved "+pct(s)+" (3 months). ";
+    if (gap < -0.03) msg += "<b>Inputs are rising clearly faster than outputs — this borrower is earning less per unit right now.</b> Ask how much stock they hold and at what price.";
+    else if (gap < 0) msg += "<b>Mild squeeze</b> — inputs slightly ahead of outputs. Not alarming alone; check the news items below before concluding.";
+    else msg += "<b>Spread is healthy</b> — outputs keeping up with or beating inputs.";
+    out.push({cls,msg});
+  }
+  if (stock.length){
+    const st=avg(stock);
+    let cls = st<-0.1 ? "bad" : st>0.1 ? "warn" : "info";
+    let msg = "<b>Inventory read (trader):</b> the stocked goods moved "+pct(st)+" in 3 months. ";
+    if (st<-0.1) msg += "<b>Falling prices = losses sitting on the stock.</b> Ask quantity, average purchase price, and how the stock is funded.";
+    else if (st>0.1) msg += "Rising prices = paper gains on stock — but ask WHY prices rose (cost-push or duty?). If a duty is holding prices up, a lapse reverses this overnight.";
+    else msg += "Quiet quarter on stock values.";
+    out.push({cls,msg});
+  }
+  // driver warnings
+  p.items.forEach(i=>{
+    if (i.driver){
+      const dm=move(i.driver,3), im=moveMulti(i.codes,3);
+      if (dm!==null && im!==null && dm-im>0.05){
+        const dn = BYCODE[i.driver]? BYCODE[i.driver].name : i.driver;
+        out.push({cls:"warn", msg:"<b>Pressure building on “"+i.label+"”:</b> its price driver ("+dn+") is up "+pct(dm)+" vs the item's "+pct(im)+". The gap usually closes — expect this cost to rise in the next 1–2 months."});
+      }
+    }
+  });
+  if (out.length===0) out.push({cls:"info", msg:"Add BUY and SELL items to this profile to get a verdict."});
+  return out;
+}
+// ============================= UI =============================
+function showTab(t){
+  ["run","intake","build","search","movers"].forEach(x=>{
+    document.getElementById("pane-"+x).classList.toggle("hidden", x!==t);
+    document.getElementById("tab-"+x).classList.toggle("active", x===t);
+  });
+  if (t==="movers") renderMovers();
+  if (t==="build") renderBuild();
+}
+function profileOptions(){
+  const sels=[document.getElementById("profileSel"), document.getElementById("editSel")];
+  sels.forEach(sel=>{
+    const cur=sel.value;
+    sel.innerHTML = PROFILES.map((p,i)=>"<option value='"+i+"'>"+p.name+"</option>").join("");
+    if (cur && Number(cur)<PROFILES.length) sel.value=cur;
+  });
+}
+function renderRun(){
+  const p = PROFILES[Number(document.getElementById("profileSel").value)||0];
+  if (!p) return;
+  document.getElementById("monthPill").textContent = "Latest data: "+mLabel(LATEST)+" · compared with "+mLabel(LATEST-3);
+  let h = "";
+  verdictFor(p).forEach(v=> h += "<div class='verdict "+v.cls+"'>"+v.msg+"</div>");
+  h += "<table><tr><th>Item (as on their books)</th><th>Role</th><th>WPI item used</th><th>"+mLabel(LATEST-3)+"</th><th>"+mLabel(LATEST)+"</th><th>3-mo move</th><th>12-mo move</th><th>Flag</th><th>Note</th></tr>";
+  p.items.forEach(i=>{
+    const m3=moveMulti(i.codes,3), m12=moveMulti(i.codes,12);
+    const names = i.codes.map(c=>BYCODE[c]? BYCODE[c].name : "code "+c+" not in file").join(" + ");
+    const v3 = i.codes.length===1 ? (val(i.codes[0],LATEST-3)??"–") : "avg";
+    const vN = i.codes.length===1 ? (val(i.codes[0],LATEST)??"–") : "avg";
+    const f = flagOf(m3);
+    h += "<tr><td><b>"+i.label+"</b>"+(i.proxy?" <span class='pill'>PROXY</span>":"")+"</td>"+
+         "<td class='side-"+i.side+"'>"+i.side+"</td>"+
+         "<td class='small'>"+names+"<br><span class='muted'>["+i.codes.join(", ")+"]</span></td>"+
+         "<td>"+v3+"</td><td>"+vN+"</td>"+
+         "<td><b>"+pct(m3)+"</b></td><td>"+pct(m12)+"</td>"+
+         "<td><span class='flag "+f+"'>"+f+"</span></td>"+
+         "<td class='small'>"+(i.note||"")+"</td></tr>";
+  });
+  h += "</table>";
+  if (p.news && p.news.length){
+    h += "<div class='newsbox'><b>Before you conclude anything, check the news (the override):</b><ul>";
+    p.news.forEach(n=> h += "<li>"+n.t+" <a href='"+n.u+"' target='_blank'>"+n.u.replace("https://","").split("/")[0]+"</a></li>");
+    h += "</ul></div>";
+  }
+  document.getElementById("runOut").innerHTML = h;
+}
+// ---------- build tab ----------
+function renderBuild(){
+  profileOptions();
+  const idx = Number(document.getElementById("editSel").value)||0;
+  const p = PROFILES[idx];
+  if (!p){ document.getElementById("buildArea").innerHTML=""; return; }
+  let h = "<h3 style='margin:14px 0 4px'>"+p.name+"</h3><table><tr><th>Item</th><th>Role</th><th>Mapped to</th><th></th></tr>";
+  p.items.forEach((i,k)=>{
+    h += "<tr><td>"+i.label+(i.proxy?" <span class='pill'>PROXY</span>":"")+"</td><td class='side-"+i.side+"'>"+i.side+"</td>"+
+         "<td class='small'>"+i.codes.map(c=>(BYCODE[c]?BYCODE[c].name:c)).join(" + ")+"</td>"+
+         "<td><button onclick='removeItem("+idx+","+k+")'>remove</button></td></tr>";
+  });
+  h += "</table>";
+  h += "<div style='margin-top:14px;padding:12px;background:var(--blue);border-radius:8px'>"+
+       "<b>Add an item:</b><br>"+
+       "<input type='text' id='addLabel' placeholder='Name as on the financials (e.g. Laha, Empty Tin)' style='width:280px;margin:6px 6px 6px 0' oninput='renderMap()'>"+
+       "<select id='addSide'><option>BUY</option><option>SELL</option><option>STOCK</option><option>COST</option><option>WATCH</option></select>"+
+       "<div class='muted' style='margin-top:4px'>BUY = input they purchase · SELL = what they sell · STOCK = traded inventory · COST = overhead/packing · WATCH = leading indicator</div>"+
+       "<div id='mapResults'></div></div>";
+  document.getElementById("buildArea").innerHTML = h;
+}
+function renderMap(){
+  const q = document.getElementById("addLabel").value;
+  const box = document.getElementById("mapResults");
+  if (!q || q.length<2){ box.innerHTML=""; return; }
+  const hits = fuzzy(q,8);
+  if (hits.length===0){ box.innerHTML="<div class='matchrow muted'>No match — try another word, or search the 'Search any WPI item' tab for a parent group and use that (mark it PROXY mentally).</div>"; return; }
+  box.innerHTML = hits.map(it=>{
+    const m3=move(it.code,3);
+    return "<div class='matchrow' onclick='pickMap(\""+it.code+"\")'><b>"+it.name+"</b> <span class='pill'>"+it.level+"</span> <span class='muted'>["+it.code+"]</span> — 3-mo "+pct(m3)+
+    (it.level!=="Item"?" <span class='muted'>(group — picking this = PROXY)</span>":"")+"</div>";
+  }).join("");
+}
+function pickMap(code){
+  const idx = Number(document.getElementById("editSel").value)||0;
+  const label = document.getElementById("addLabel").value;
+  const side = document.getElementById("addSide").value;
+  const it = BYCODE[code];
+  PROFILES[idx].items.push({label:label, side:side, codes:[code], proxy: it.level!=="Item", note: it.level!=="Item" ? "PROXY: nearest WPI group ("+it.name+")" : ""});
+  persist(); renderBuild(); profileOptions();
+}
+function removeItem(pi,k){ PROFILES[pi].items.splice(k,1); persist(); renderBuild(); }
+function createProfile(){
+  const n = document.getElementById("npName").value.trim();
+  if (!n) return alert("Type a borrower name first.");
+  PROFILES.push({name:n, items:[], news:[
+    {t:"Government notifications touching this borrower's goods (duties, MSP, bans) override every price signal — search the product name:", u:"https://pib.gov.in/AllReleases.aspx"},
+    {t:"If they import or export: rupee reference rate (>5% weaker in 3 months = upgrade flags):", u:"https://www.rbi.org.in/Scripts/BS_DisplayReferenceRate.aspx"}
+  ]});
+  persist(); profileOptions();
+  document.getElementById("editSel").value = String(PROFILES.length-1);
+  document.getElementById("npName").value="";
+  renderBuild();
+}
+function deleteProfile(){
+  const idx = Number(document.getElementById("editSel").value)||0;
+  if (!confirm("Delete profile '"+PROFILES[idx].name+"'?")) return;
+  PROFILES.splice(idx,1); persist(); profileOptions(); renderBuild();
+}
+function exportProfiles(){
+  const blob = new Blob([JSON.stringify(PROFILES,null,2)],{type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "wpi_borrower_profiles.json"; a.click();
+}
+document.getElementById("impFile").addEventListener("change", e=>{
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{ try { PROFILES = JSON.parse(r.result); persist(); profileOptions(); renderBuild(); renderRun(); alert("Profiles loaded."); } catch(err){ alert("Could not read that JSON."); } };
+  r.readAsText(f);
+});
+// ---------- intake tab ----------
+let INTAKE=[];
+async function handlePDF(f){
+  const st=document.getElementById("pdfStatus");
+  st.textContent="Reading "+f.name+" …";
+  try {
+    const buf=await f.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    let lines=[];
+    for (let p=1;p<=pdf.numPages;p++){
+      const tc=await (await pdf.getPage(p)).getTextContent();
+      const rowsMap={};
+      tc.items.forEach(it=>{ const y=Math.round(it.transform[5]/4); (rowsMap[y]=rowsMap[y]||[]).push(it.str); });
+      Object.keys(rowsMap).forEach(y=>lines.push(rowsMap[y].join(" ")));
+    }
+    autoDetect(lines, st, f.name, pdf.numPages);
+  } catch(err){ st.textContent="Could not read this PDF ("+err.message+"). Paste the schedule lines manually instead."; }
+}
+function autoDetect(lines, st, fname, npages){
+  const best={};   // one entry per matched WPI code, keeping the shortest (cleanest) label
+  lines.forEach(line=>{
+    const label=cleanLine(line);
+    if (label.length<3 || label.split(" ").length>3) return;
+    const hits=fuzzyScored(label,5);
+    if (hits.length===0 || hits[0].s<5) return;   // needs at least one strong whole-word match
+    const code=hits[0].it.code;
+    if (best[code]===undefined || label.length<best[code].label.length)
+      best[code]={label:label, side:"BUY", hits:hits.map(h=>h.it), sel:0, use:true};
+  });
+  INTAKE=Object.values(best);
+  if (st) st.textContent = INTAKE.length
+    ? "Read "+npages+" pages of "+fname+" — found "+INTAKE.length+" commodity-like lines. Review below: untick the noise, set BUY / SELL / STOCK / COST for the real ones."
+    : "Read "+fname+" but found no recognisable commodity lines — the PDF is probably a scan. Paste or type the schedule lines instead.";
+  renderIntake();
+}
+function cleanLine(s){
+  return s.replace(/[0-9]/g," ").replace(/[,.()\[\]:;₹%/\\-]/g," ")
+    .replace(/\b(rs|inr|lakh|lakhs|crore|crores|cr|qty|qtls|kg|kgs|mt|ton|tons|tonnes|ltr|ltrs|litre|litres|nos|no|pcs|amount|value|total|opening|closing|stock|balance|of|as|at|on|to|by|less|add|purchases?|sales?)\b/gi," ")
+    .replace(/\s+/g," ").trim();
+}
+function mapIntake(){
+  INTAKE=[];
+  const grab=(id,side)=>{
+    document.getElementById(id).value.split("\n").forEach(line=>{
+      const label=cleanLine(line);
+      if (label.length<2) return;
+      const hits=fuzzy(label,5);
+      INTAKE.push({label:label, side:side, hits:hits, sel:0, use:hits.length>0});
+    });
+  };
+  grab("inRM","BUY"); grab("inFG","SELL");
+  renderIntake();
+}
+function renderIntake(){
+  if (INTAKE.length===0){ document.getElementById("intakeOut").innerHTML="<p class='muted'>Nothing to map — paste some lines first.</p>"; return; }
+  let h="<p class='muted' style='margin-top:12px'>Check each match before creating the profile — the tool suggests, you decide. Picking a GROUP row means it is a PROXY (nearest shelf, not the exact item).</p>";
+  h+="<table><tr><th>Use</th><th>Item (from statement)</th><th>Role</th><th>Best WPI match — change if wrong</th><th>3-mo move</th></tr>";
+  INTAKE.forEach((x,i)=>{
+    const cur = x.hits[x.sel];
+    const opts = x.hits.map((it,k)=>"<option value='"+k+"'"+(k===x.sel?" selected":"")+">"+it.name.slice(0,60)+" ["+it.code+"]"+(it.level!=="Item"?" — GROUP (proxy)":"")+"</option>").join("");
+    h+="<tr><td><input type='checkbox' "+(x.use?"checked":"")+" onchange='INTAKE["+i+"].use=this.checked'></td>"+
+      "<td><b>"+x.label+"</b></td>"+
+      "<td><select onchange='INTAKE["+i+"].side=this.value'>"+["BUY","SELL","STOCK","COST","WATCH"].map(s=>"<option"+(s===x.side?" selected":"")+">"+s+"</option>").join("")+"</select></td>"+
+      "<td>"+(x.hits.length? "<select style='max-width:380px' onchange='INTAKE["+i+"].sel=Number(this.value);renderIntake()'>"+opts+"</select>" : "<span class='muted'>no match — look for a parent group in the Search tab, then add it via Add/edit</span>")+"</td>"+
+      "<td>"+(cur? pct(move(cur.code,3)) : "–")+"</td></tr>";
+  });
+  h+="</table><button class='primary' style='margin-top:10px' onclick='buildFromIntake()'>Create profile &amp; show signals</button>";
+  document.getElementById("intakeOut").innerHTML=h;
+}
+function buildFromIntake(){
+  const name=document.getElementById("inName").value.trim()||("Borrower "+(PROFILES.length+1));
+  const p={name:name, items:[], news:[
+    {t:"Government notifications on these goods (duties, MSP, export bans) override every price signal — search the product names:", u:"https://pib.gov.in/AllReleases.aspx"},
+    {t:"Import-duty / tariff changes on these goods:", u:"https://taxinformation.cbic.gov.in"},
+    {t:"If they import or export: rupee reference rate (more than 5% weaker in 3 months = upgrade flags one level):", u:"https://www.rbi.org.in/Scripts/BS_DisplayReferenceRate.aspx"}
+  ]};
+  INTAKE.forEach(x=>{
+    if (x.use===false || x.hits.length===0) return;
+    const it=x.hits[x.sel];
+    p.items.push({label:x.label, side:x.side, codes:[it.code], proxy:it.level!=="Item", note:it.level!=="Item"?"PROXY: nearest WPI group ("+it.name+")":""});
+  });
+  if (document.getElementById("inFuel").checked) p.items.push({label:"Fuel & Power (freight + electricity)", side:"COST", codes:["1200000000"], note:""});
+  if (p.items.length===0){ alert("Nothing selected — tick at least one mapped item."); return; }
+  PROFILES.push(p); persist(); profileOptions();
+  document.getElementById("profileSel").value=String(PROFILES.length-1);
+  showTab("run"); renderRun();
+}
+// ---------- search tab ----------
+function renderSearch(){
+  const q = document.getElementById("searchBox").value;
+  const box = document.getElementById("searchResults");
+  if (!q || q.length<2){ box.innerHTML=""; return; }
+  const hits = fuzzy(q,15);
+  box.innerHTML = hits.length? hits.map(it=>{
+    const m3=move(it.code,3), m12=move(it.code,12), f=flagOf(m3);
+    return "<div class='matchrow'><b>"+it.name+"</b> <span class='pill'>"+it.level+"</span> <span class='muted'>["+it.code+"]</span><br>"+
+      mLabel(LATEST-3)+": "+(val(it.code,LATEST-3)??"–")+" → "+mLabel(LATEST)+": "+(val(it.code,LATEST)??"–")+
+      " · 3-mo <b>"+pct(m3)+"</b> · 12-mo "+pct(m12)+" · <span class='flag "+f+"'>"+f+"</span></div>";
+  }).join("") : "<div class='matchrow muted'>No match. Hindi/trade names work for common items (laha, khal, bardana, sariya…). Otherwise try the material it is made of.</div>";
+}
+// ---------- movers tab ----------
+function renderMovers(){
+  const rows = ITEMS.filter(it=>it.level==="Item").map(it=>({it, m:move(it.code,3)})).filter(x=>x.m!==null);
+  rows.sort((a,b)=>Math.abs(b.m)-Math.abs(a.m));
+  let h = "<table><tr><th>#</th><th>Item</th><th>Code</th><th>3-mo move</th><th>Flag</th></tr>";
+  rows.slice(0,25).forEach((x,i)=>{
+    const f=flagOf(x.m);
+    h += "<tr><td>"+(i+1)+"</td><td>"+x.it.name+"</td><td class='small'>"+x.it.code+"</td><td><b>"+pct(x.m)+"</b></td><td><span class='flag "+f+"'>"+f+"</span></td></tr>";
+  });
+  h += "</table>";
+  document.getElementById("moversOut").innerHTML=h;
+}
+// ---------- file load ----------
+function handleFile(f){
+  const r = new FileReader();
+  r.onload = ()=>{
+    try {
+      parseWorkbook(new Uint8Array(r.result));
+      document.getElementById("drop").classList.add("loaded");
+      document.getElementById("dropText").textContent = "Loaded: "+f.name+" — data up to "+mLabel(LATEST);
+      document.getElementById("dropSub").textContent = ITEMS.length+" WPI rows read. Drop next month's file here anytime to refresh.";
+      document.getElementById("afterLoad").classList.remove("hidden");
+      profileOptions(); renderRun();
+    } catch(err){ alert(err.message); }
+  };
+  r.readAsArrayBuffer(f);
+}
+document.getElementById("file").addEventListener("change", e=>{ if (e.target.files[0]) handleFile(e.target.files[0]); });
+const dz = document.getElementById("drop");
+dz.addEventListener("dragover", e=>{ e.preventDefault(); });
+dz.addEventListener("drop", e=>{ e.preventDefault(); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+loadProfiles();
+</script>
+</body>
+</html>

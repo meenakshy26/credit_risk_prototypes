@@ -14,6 +14,7 @@ bureau data. Everything here is built from scratch against mock/sample data.
 | Feature | Status | Stack |
 |---------|--------|-------|
 | [PAN entity type detection](features/pan-entity-detection/) | In progress | Node.js |
+| [WPI macro signal engine](features/wpi-macro-signal-engine/) | In progress | Node.js |
 
 ## How to run any feature
 

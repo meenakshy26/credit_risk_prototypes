@@ -1,0 +1,24 @@
+{
+  "name": "wpi-macro-signal-engine",
+  "version": "1.0.0",
+  "description": "WPI Macro Signal Engine - Phase 1: ingest, signal service, report composer, store",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "bin": {
+    "wpi-engine": "./src/cli/index.js"
+  },
+  "scripts": {
+    "download": "node src/cli/index.js download",
+    "ingest": "node src/cli/index.js ingest",
+    "run-signals": "node src/cli/index.js run",
+    "seed": "node src/cli/index.js seed",
+    "monthly": "node src/cli/index.js monthly",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  }
+}

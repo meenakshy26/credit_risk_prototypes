@@ -60,6 +60,85 @@ Reports land at `out/reports/<month>/<profile-slug>.md`; the JSON backing
 every number in them (for traceability) lands alongside it in
 `out/signals/<month>/`.
 
+## Onboarding a borrower from raw schedules (§3 intake)
+
+The monthly cycle above runs against profiles that are already coded (name +
+WPI code + role). §3 covers the other path: a caller hands over a borrower's
+raw, free-text schedules — exactly as they appear in the financials, no
+pre-mapping — and gets back a profile, WPI codes, and a report, synchronously.
+
+This only works once the store has at least one ingest (`npm run monthly` or
+`npm run ingest` first) and the seed data (`npm run seed`) loaded, since
+mapping and signals both read from what's already stored.
+
+**Payload shape:**
+
+```json
+{
+  "entity_name": "Sample Traders Pvt Ltd",
+  "period": "2026-07",
+  "schedules": [
+    { "type": "trading_purchases", "items": [{ "name_verbatim": "Chawal", "value_inr": 12000000 }] },
+    { "type": "trading_sales", "items": [{ "name_verbatim": "Chawal", "value_inr": 12600000 }] },
+    { "type": "raw_material", "items": [
+      { "name_verbatim": "Sarson", "value_inr": 5000000 },
+      { "name_verbatim": "HDPE Bags", "value_inr": 400000 }
+    ] },
+    { "type": "expenses", "items": [{ "name_verbatim": "Freight Outward", "value_inr": 250000 }] }
+  ]
+}
+```
+
+`schedules[].type` is one of `raw_material`, `finished_goods`,
+`trading_purchases`, `trading_sales`, `expenses`. What happens to each line,
+in order (§3.1): a name that is ≥70% of value on both sides of a trading
+account becomes a single **STOCK** row; the rest of `raw_material` becomes
+**BUY** (packaging/consumable names, or anything under 10% of the raw-material
+total, are reclassified to **COST**); `finished_goods` becomes **SELL**;
+`expenses` becomes **COST** only for freight/diesel/power/fuel/electricity/
+packing lines — everything else in an expense schedule is dropped as not
+price-relevant. Every BUY/STOCK row then gets its upstream input auto-added as
+a standalone **WATCH** row from the driver table (never taken from the
+statement itself).
+
+Each name is then mapped to a WPI code in two stages (§5): Stage 1 resolves
+the free-text term to a commodity name via a synonym table (no LLM is wired
+up yet — an unresolved term passes through as-is at Low confidence rather
+than blocking the response); Stage 2 scores that name against the ~800 WPI
+items and commits either an exact item code (High), a PROXY parent
+constrained to the borrower's own commodity mix (Medium), or an
+industry-level PROXY (Low). **Low-confidence mappings are still published**
+— the signal is never withheld — but are also queued in `review_queue` for a
+human to confirm once.
+
+**CLI:**
+
+```bash
+node src/cli/index.js intake borrower.json
+```
+
+Prints the profile id, any items queued for review, and the same Markdown
+report the monthly cycle writes to `out/`.
+
+**HTTP (for a caller like OneRisk):**
+
+```bash
+npm run serve                     # starts on :3000 against data/wpi.db (override with PORT / WPI_DB_PATH)
+curl -X POST localhost:3000/profiles/intake \
+  -H 'content-type: application/json' \
+  -d @borrower.json
+```
+
+`POST /profiles/intake` returns:
+
+- `200` — `{ profileId, status, month, summary, reviewEntries }`, where
+  `summary` is the same Markdown text as the CLI/monthly reports (that's the
+  "summary text" OneRisk gets back).
+- `400` — malformed request (missing `entity_name` or `schedules`).
+- `422` — well-formed but semantically invalid (unknown schedule type, an
+  item with no `name_verbatim`).
+- `503` — the store has no WPI data ingested yet.
+
 ## Testing
 
 ```bash
@@ -79,8 +158,11 @@ the repo root.
 
 ```
 src/
-  cli/         CLI entry point (download, ingest, seed, run, monthly, status)
+  cli/         CLI entry point (download, ingest, seed, run, monthly, intake, status)
+  server.js    thin Express wrapper exposing POST /profiles/intake
   ingest/      xlsx parsing, validation, and the live WPI downloader
+  mapping/     §3 intake: role assignment (§3.1), Stage 1 term resolution and
+               Stage 2 WPI code lookup (§5), and the intake orchestrator
   seed/        synonyms, drivers, policy checks, and the pilot profiles
   signals/     move calculations and the rule engine (§6)
   report/      fixed-order report composition (§7)
@@ -90,5 +172,8 @@ tests/         node:test suite (unit + acceptance)
 ```
 
 Phase 1 scope per the PRD: ingest, signal service, report composer, store,
-and 3 pilot profiles. Intake mapping (§5 Stage 1), role-assignment automation
-(§3.1), notifications, and calibration are later phases.
+3 pilot profiles, and the §3/§5 raw-borrower intake pipeline (role
+assignment, two-stage WPI mapping, review queue). Stage 1's LLM fallback for
+unresolved terms is deliberately not wired up — unresolved terms are queued
+for human review instead, so the engine has no external dependency.
+Notifications and calibration are later phases.

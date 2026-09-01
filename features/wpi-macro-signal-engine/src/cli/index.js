@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { openStore } from '../store/index.js';
 import { ValidationError, ingestFile } from '../ingest/index.js';
 import { downloadLatestFile } from '../ingest/download.js';
 import { seedAll } from '../seed/index.js';
 import { runMonth, writeMonthOutputs } from '../pipeline/monthly.js';
+import { intakeProfile } from '../mapping/intake.js';
 
 const DEFAULTS = { db: 'data/wpi.db', source: '.', out: 'out', rawDir: 'data/raw' };
 
@@ -16,6 +18,7 @@ const USAGE = `wpi-engine — WPI Macro Signal Engine (Phase 1)
   seed            Load synonyms, drivers, policy checks and the pilot profiles
   run             Run the signal rules and write reports for the latest month
   monthly [path]  download (if no path given), then ingest, seed, run — hands-free
+  intake <path>   Onboard a borrower from a raw §3 JSON payload and print its report
   status          Show what is currently stored
 
 Options
@@ -104,6 +107,28 @@ function doRun(store, opts) {
   return run;
 }
 
+/**
+ * §3 receipt pipeline from the command line: raw schedules in, a printed
+ * report out — the same synchronous path a service endpoint would expose to
+ * OneRisk, minus the HTTP wrapper. No LLM is wired up (§5.1), so unresolved
+ * terms land in the review queue rather than blocking the report.
+ */
+function doIntake(store, path, opts) {
+  if (!path) throw new Error('intake needs a path to a JSON payload, e.g. wpi-engine intake borrower.json');
+  const payload = JSON.parse(readFileSync(resolve(path), 'utf8'));
+  const fx = opts.fx === null ? null : { weakeningMove3m: opts.fx, source: opts.fxSource };
+  const result = intakeProfile(store, payload, { fx });
+
+  console.log(`intake  ${payload.entity_name} -> profile #${result.profileId}, status ${result.signals.status}`);
+  if (result.reviewEntries.length > 0) {
+    console.log(`        ${result.reviewEntries.length} item(s) queued for review:`);
+    for (const r of result.reviewEntries) console.log(`        - ${r.label}: ${r.reason}`);
+  }
+  console.log('');
+  console.log(result.report.markdown);
+  return result;
+}
+
 function doStatus(store) {
   const ingest = store.lastSuccessfulIngest();
   const months = store.distinctMonths();
@@ -154,6 +179,9 @@ export async function main(argv = process.argv.slice(2)) {
         doRun(store, opts);
         return 0;
       }
+      case 'intake':
+        doIntake(store, positional[0], opts);
+        return 0;
       case 'status':
         doStatus(store);
         return 0;

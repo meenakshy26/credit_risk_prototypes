@@ -48,7 +48,7 @@ export function runMonth(store, { fx = null } = {}) {
  * flag rather than withheld. A PROXY row and a row whose Stage 1 confidence was
  * below `high` are both cases a human should confirm once.
  */
-function reviewFlagsFor(signals) {
+export function reviewFlagsFor(signals) {
   const out = [];
   for (const row of signals.rows) {
     if (row.isProxy) {

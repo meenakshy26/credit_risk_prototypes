@@ -75,22 +75,58 @@ function traceability(signals, revisions, reviewFlags) {
   };
 }
 
+/**
+ * Reads as prose, not a labeled form: one paragraph per borrower, with light
+ * connective phrases standing in for the old bold section headers, so a
+ * reader gets the same PRD §7.1 content (same fixed order, same sentences)
+ * without it feeling like a table of stacked headings.
+ *
+ * Two lead-in styles: a "clause" style folds grammatically into the sentence
+ * that follows (so that sentence's first letter is lower-cased), while a
+ * "list" style introduces a colon-led list of names/acronyms (policy
+ * sources, borrower questions) whose original casing must be left alone —
+ * lower-casing "DGFT" would otherwise read as a typo.
+ */
+const CLAUSE_LEAD_IN = Object.freeze({
+  margin: 'On margin,',
+  inventory: 'On the stock it holds,',
+  cost: 'On cost pressure,',
+  warnings: 'Looking upstream,',
+});
+const LIST_LEAD_IN = Object.freeze({
+  policy: 'Before acting on this, worth checking:',
+  questions: 'Worth asking the borrower:',
+});
+
+function lowerFirst(s) {
+  return s.length > 0 ? s.charAt(0).toLowerCase() + s.slice(1) : s;
+}
+
+function ensureEndPunctuation(s) {
+  return /[.!?]$/.test(s) ? s : `${s}.`;
+}
+
 function renderMarkdown(report) {
   const lines = [];
   const [headline, ...rest] = report.blocks;
 
   lines.push(`# ${headline.title}`, '');
-  lines.push(headline.sentences.join(' '), '');
+
+  const paragraph = [ensureEndPunctuation(headline.sentences.join(' '))];
+  for (const block of rest) {
+    const text = block.sentences.join(' ');
+    let segment = text;
+    if (CLAUSE_LEAD_IN[block.key]) segment = `${CLAUSE_LEAD_IN[block.key]} ${lowerFirst(text)}`;
+    else if (LIST_LEAD_IN[block.key]) segment = `${LIST_LEAD_IN[block.key]} ${text}`;
+    paragraph.push(ensureEndPunctuation(segment));
+  }
+  lines.push(paragraph.join(' '), '');
 
   if (report.previousStatus && report.previousStatus.status !== report.status) {
     lines.push(
-      `> Status changed from **${report.previousStatus.status}** in ${monthLong(report.previousStatus.month)} to **${report.status}** this month.`,
+      `Status changed from ${report.previousStatus.status} in ${monthLong(report.previousStatus.month)} to ${report.status} this month.`,
       '',
     );
-  }
-
-  for (const block of rest) {
-    lines.push(`**${block.heading}:** ${block.sentences.join(' ')}`, '');
   }
 
   lines.push(...renderTraceability(report));
